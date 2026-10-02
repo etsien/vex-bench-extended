@@ -1,0 +1,53 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "openrouter": {
+      "options": {
+        "baseURL": "http://localhost:8788",
+        "apiKey": "{env:OPENROUTER_API_KEY}"
+      },
+      "models": {
+        "deepseek-v4-pro": {
+          "name": "DeepSeek V4 Pro",
+          "id": "deepseek/deepseek-v4-pro",
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "deepseek-v4-flash": {
+          "name": "DeepSeek V4 Flash",
+          "id": "deepseek/deepseek-v4-flash",
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "kimi-k2.6": {
+          "name": "Kimi K2.6",
+          "id": "moonshotai/kimi-k2.6",
+          "limit": {
+            "context": 262144,
+            "output": 65536
+          }
+        },
+        "minimax-m2.7": {
+          "name": "MiniMax M2.7",
+          "id": "minimax/minimax-m2.7",
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "glm-5.1": {
+          "name": "GLM 5.1",
+          "id": "z-ai/glm-5.1",
+          "limit": {
+            "context": 200000,
+            "output": 128000
+          }
+        }
+      }
+    }
+  }
+}
