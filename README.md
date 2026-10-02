@@ -177,7 +177,7 @@ results/<prompt_hash>/<harness>/<model>/
 ```
 vex-bench-extended/
   benchmark/
-    tasks/vex_bench.jsonl     75 task definitions (from upstream)
+    tasks/                    task definitions (pulled from upstream by setup.sh)
     repos/                    repo snapshots (downloaded by setup.sh)
   docker/
     base.*.Dockerfile         base images per language
