@@ -24,13 +24,15 @@ cd vex-bench-extended
 uv sync
 ```
 
-### 2. Download benchmark data
+### 2. Download repo snapshots
+
+The benchmark task definitions and repo snapshots are pulled from upstream VEX-Bench:
 
 ```bash
 bash setup.sh
 ```
 
-This clones upstream VEX-Bench, downloads the 75 repo snapshots, and links them into `benchmark/`.
+This clones upstream VEX-Bench, copies the task definitions into `benchmark/tasks/`, downloads the repo snapshots, and links them into `benchmark/repos/`. Re-run it to pick up new tasks from upstream.
 
 ### 3. Build Docker images
 
@@ -119,13 +121,9 @@ export OPENROUTER_API_KEY=sk-or-...
 bash scripts/test-opencode.sh
 ```
 
-### OpenCode version pinning
+### Troubleshooting
 
-The Dockerfiles pin OpenCode to v1.15.5, the same version used in the original paper. Later versions (1.18.x+) have regressions where custom provider configurations silently fail to register.
-
-### Podman compatibility
-
-This project uses `docker cp` to inject the OpenCode config into containers instead of volume mounts. Podman's rootless UID remapping makes volume-mounted files unreadable inside containers; `docker cp` avoids this.
+See [docs/opencode-troubleshooting.md](docs/opencode-troubleshooting.md) for known issues with OpenCode version pinning (v1.15.5 required), podman compatibility (`docker cp` instead of volume mounts), and the API key passthrough bug.
 
 ## Usage reference
 
@@ -193,6 +191,8 @@ vex-bench-extended/
     codex/                    Codex credentials
     cursor/                   Cursor SDK credentials
     vertex_ai/                Vertex AI credentials
+  docs/
+    opencode-troubleshooting.md   known issues and fixes for OpenCode harness
   scripts/
     openrouter_proxy.py       fp8 provider-pinning proxy for OpenRouter
     test-opencode.sh          end-to-end smoke test
