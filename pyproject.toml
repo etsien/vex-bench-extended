@@ -1,0 +1,47 @@
+[project]
+name = "vex-bench-extended"
+version = "0.1.0"
+description = "Extended VEX-Bench: cross-harness, cross-model vulnerability exploitability benchmarking"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "scikit-learn>=1.8.0",
+    "matplotlib>=3.9",
+    "tabulate>=0.10.0",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+cursor = ["cursor-sdk>=0.1"]
+vertex = ["google-cloud-aiplatform>=1.60", "anthropic>=0.30"]
+openai = ["openai>=2.29.0"]
+all = ["vex-bench-extended[cursor,vertex,openai]"]
+dev = ["ruff>=0.8", "pytest>=8.0"]
+
+[project.scripts]
+vex-ext = "cli:main"
+
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["cli"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/prompts/*.py" = ["E501"]
