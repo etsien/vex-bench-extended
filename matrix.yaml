@@ -1,0 +1,24 @@
+# Benchmark matrix configuration.
+# Controls which (model, harness, prompt) combinations to run.
+# Use `vex-ext matrix` to execute this, or filter with --models / --harnesses.
+
+benchmark: vex_bench
+repeats: 3
+timeout: 600
+parallel: 2
+
+# To run everything: leave models and harnesses empty (null).
+# To run a subset: list specific names.
+#
+# models:
+#   - grok-3
+#   - claude-opus-4-6
+#   - gemini-2.5-pro
+#   - vertex-claude-opus-4-6
+#   - vertex-gemini-2.5-pro
+#   - vertex-gpt-luna
+#
+# harnesses:
+#   - cursor
+#   - vertex_claude_code
+#   - claude_code
