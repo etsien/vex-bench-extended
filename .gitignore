@@ -5,7 +5,8 @@ dist/
 build/
 .venv/
 
-# Benchmark data (downloaded separately)
+# Benchmark data (downloaded by setup.sh from upstream)
+benchmark/tasks/
 benchmark/repos/
 .upstream-vex-bench/
 
