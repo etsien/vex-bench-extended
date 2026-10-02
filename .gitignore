@@ -1,0 +1,31 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Benchmark data (downloaded separately)
+benchmark/repos/
+.upstream-vex-bench/
+
+# Experiment outputs
+results/
+
+# Real credential files (only .example templates are tracked)
+env/claude/claude.env
+env/codex/codex.env
+env/codex/config.toml
+env/opencode/opencode.env
+env/opencode/opencode.json
+env/cursor/cursor.env
+env/vertex_ai/vertex.env
+env/vertex_ai/*.json
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# uv
+uv.lock
