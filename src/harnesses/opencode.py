@@ -1,13 +1,28 @@
-"""OpenCode CLI harness -- adapted from upstream VEX-Bench."""
+"""OpenCode CLI harness -- adapted from upstream VEX-Bench.
+
+Runs OpenCode inside disposable Docker containers with a host-side proxy
+for OpenRouter fp8 provider pinning. The proxy is started automatically
+on first use and shared across all container runs in the process.
+
+Logging:
+  - Terminal (INFO): one-line start/end per task, errors, billing alerts
+  - File (DEBUG): full pipeline detail (container IDs, copy steps, proxy health)
+  - Proxy log: written to a separate file, path printed at startup
+"""
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
+import os
 import shlex
 import shutil
+import socket
 import subprocess
+import sys
 import tempfile
+import time
 from pathlib import Path
 
 from harnesses.base import AgentResult, BaseHarness, ParsedResult, RunContext, RunStats
@@ -15,8 +30,29 @@ from evaluate.result_parser import parse_category
 
 logger = logging.getLogger(__name__)
 
+LOG_DIR = Path("logs")
+_file_handler: logging.FileHandler | None = None
+
+
+def _setup_file_logging() -> None:
+    """Add a DEBUG-level file handler on first use."""
+    global _file_handler
+    if _file_handler is not None:
+        return
+    LOG_DIR.mkdir(exist_ok=True)
+    path = LOG_DIR / f"opencode-harness-{int(time.time())}.log"
+    _file_handler = logging.FileHandler(path, encoding="utf-8")
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    ))
+    logging.getLogger("harnesses.opencode").addHandler(_file_handler)
+    logger.info("harness log: %s", path)
+
 HOST_ENV_FILE = Path("env/opencode/opencode.env")
 HOST_CONFIG = Path("env/opencode/opencode.json")
+PROXY_SCRIPT = Path("scripts/openrouter_proxy.py")
+PROXY_PORT = 8788
 CONTAINER_CONFIG = "/root/.config/opencode/opencode.json"
 
 MODEL2NAME = {
@@ -27,6 +63,114 @@ MODEL2NAME = {
     "glm-5.1": "openrouter-proxy/z-ai/glm-5.1",
 }
 
+_proxy_proc: subprocess.Popen | None = None
+_proxy_log: Path | None = None
+
+
+def _port_open(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(2)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _load_env_file(path: Path) -> dict[str, str]:
+    """Parse a KEY=value env file, skipping comments and blanks."""
+    result = {}
+    if not path.exists():
+        return result
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            result[k.strip()] = v.strip().strip("'\"")
+    return result
+
+
+def _ensure_proxy() -> None:
+    """Start the OpenRouter proxy if it isn't already listening."""
+    global _proxy_proc, _proxy_log
+
+    if _proxy_proc is not None:
+        rc = _proxy_proc.poll()
+        if rc is not None:
+            logger.error("proxy died pid=%d exit=%d log=%s", _proxy_proc.pid, rc, _proxy_log)
+            if _proxy_log and _proxy_log.exists():
+                logger.debug("proxy log tail:\n%s", _proxy_log.read_text()[-2000:])
+            _proxy_proc = None
+
+    if _port_open(PROXY_PORT):
+        return
+
+    _stop_proxy()
+
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        env_vars = _load_env_file(HOST_ENV_FILE)
+        key = env_vars.get("OPENROUTER_API_KEY", "")
+        if key and key != "proxy" and not key.startswith("sk-or-..."):
+            os.environ["OPENROUTER_API_KEY"] = key
+        else:
+            raise RuntimeError(
+                "OPENROUTER_API_KEY not found in env or env/opencode/opencode.env"
+            )
+
+    script = PROXY_SCRIPT.resolve()
+    if not script.exists():
+        raise RuntimeError(f"proxy script missing: {script}")
+
+    LOG_DIR.mkdir(exist_ok=True)
+    _proxy_log = LOG_DIR / f"proxy-{int(time.time())}.log"
+    log_fh = open(_proxy_log, "w")
+
+    logger.info("proxy starting on :%d (log: %s)", PROXY_PORT, _proxy_log)
+    _proxy_proc = subprocess.Popen(
+        [sys.executable, str(script), "--port", str(PROXY_PORT)],
+        stdout=log_fh,
+        stderr=log_fh,
+    )
+    atexit.register(_stop_proxy)
+
+    for _ in range(30):
+        if _proxy_proc.poll() is not None:
+            detail = _proxy_log.read_text()[-1000:] if _proxy_log.exists() else ""
+            raise RuntimeError(f"proxy exited immediately (exit {_proxy_proc.returncode}):\n{detail}")
+        if _port_open(PROXY_PORT):
+            logger.info("proxy ready pid=%d", _proxy_proc.pid)
+            return
+        time.sleep(0.2)
+    raise RuntimeError(f"proxy failed to start in 6s, see {_proxy_log}")
+
+
+def _check_proxy_alive() -> None:
+    """Verify the proxy is still responsive. Called before each container run."""
+    if _proxy_proc is not None:
+        rc = _proxy_proc.poll()
+        if rc is not None:
+            tail = ""
+            if _proxy_log and _proxy_log.exists():
+                tail = _proxy_log.read_text()[-500:]
+            logger.error("proxy dead pid=%d exit=%d", _proxy_proc.pid, rc)
+            logger.debug("proxy log tail:\n%s", tail)
+            raise RuntimeError(f"proxy died (exit {rc}), log: {_proxy_log}")
+
+    if not _port_open(PROXY_PORT):
+        raise RuntimeError(f"proxy port {PROXY_PORT} not reachable")
+
+
+def _stop_proxy() -> None:
+    global _proxy_proc
+    if _proxy_proc is not None:
+        pid = _proxy_proc.pid
+        try:
+            _proxy_proc.terminate()
+            _proxy_proc.wait(timeout=5)
+        except Exception:
+            _proxy_proc.kill()
+            _proxy_proc.wait(timeout=2)
+        logger.debug("proxy stopped pid=%d", pid)
+        _proxy_proc = None
+
 
 class OpenCodeHarness(BaseHarness):
     def __init__(self, model: str, **kwargs):
@@ -35,14 +179,20 @@ class OpenCodeHarness(BaseHarness):
         self.model_name = MODEL2NAME[model]
 
     def run(self, prompt: str, ctx: RunContext) -> AgentResult:
+        _setup_file_logging()
+        _ensure_proxy()
+        _check_proxy_alive()
+
         env_file = HOST_ENV_FILE.resolve()
         if not env_file.exists():
-            raise RuntimeError(f"Env file not found: {env_file}")
+            raise RuntimeError(f"env file missing: {env_file}")
         config_file = HOST_CONFIG.resolve()
         if not config_file.exists():
-            raise RuntimeError(f"Config file not found: {config_file}")
+            raise RuntimeError(f"config missing: {config_file}")
 
         image = f"vex-bench-{ctx.language}-opencode:latest"
+        logger.debug("run model=%s image=%s src=%s", self.model_name, image, ctx.cwd)
+        t0 = time.monotonic()
         output = _run_opencode_and_export(
             image,
             model=self.model_name,
@@ -53,6 +203,8 @@ class OpenCodeHarness(BaseHarness):
             config_file=config_file,
             artifacts_dir=ctx.artifacts_dir,
         )
+        elapsed = time.monotonic() - t0
+        _validate_output(output, elapsed)
         return AgentResult(raw_output=output)
 
     def result_filename(self) -> str:
@@ -101,6 +253,38 @@ class OpenCodeHarness(BaseHarness):
         )
 
 
+def _validate_output(output: str, elapsed: float) -> None:
+    """Reject empty sessions that would be cached as valid results."""
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"invalid JSON export ({len(output)}B, {elapsed:.0f}s)")
+
+    tokens = data.get("info", {}).get("tokens", {})
+    tok_in = tokens.get("input", 0) or 0
+    tok_out = tokens.get("output", 0) or 0
+    if tok_in + tok_out == 0:
+        raise RuntimeError(f"empty session: 0 tokens ({elapsed:.0f}s)")
+    logger.debug("validated: in=%d out=%d %.0fs", tok_in, tok_out, elapsed)
+
+
+_BILLING_PATTERNS = [
+    "insufficient", "quota", "exceeded", "billing", "payment",
+    "rate limit", "429", "402", "credits", "funds",
+]
+
+
+def _check_for_billing_errors(text: str) -> None:
+    """Surface billing/quota errors with ERROR level."""
+    lower = text.lower()
+    for pattern in _BILLING_PATTERNS:
+        if pattern in lower:
+            for line in text.splitlines():
+                if pattern in line.lower():
+                    logger.error("BILLING: %s", line.strip()[:200])
+            return
+
+
 def _run_opencode_and_export(
     image: str, *, model: str, prompt: str, src: Path,
     timeout: int, env_file: Path, config_file: Path,
@@ -108,6 +292,7 @@ def _run_opencode_and_export(
 ) -> str:
     script = _build_export_script(model=model, timeout=timeout)
     cid = _create_container(image, env_file=env_file, config_file=config_file, script=script)
+    logger.debug("created %s", cid[:12])
 
     with tempfile.TemporaryDirectory(prefix="vex-opencode-") as tmp:
         tmpdir = Path(tmp)
@@ -115,6 +300,7 @@ def _run_opencode_and_export(
         prompt_path.write_text(prompt, encoding="utf-8")
         try:
             _copy_inputs(cid, src=src, prompt_path=prompt_path, config_file=config_file)
+            logger.debug("copied inputs -> %s", cid[:12])
             _start_container(cid, timeout=timeout)
             return _copy_export(cid, tmpdir)
         finally:
@@ -146,25 +332,26 @@ def _copy_inputs(cid: str, *, src: Path, prompt_path: Path, config_file: Path) -
 
 
 def _start_container(cid: str, *, timeout: int) -> None:
+    t0 = time.monotonic()
     try:
         started = subprocess.run(
             ["docker", "start", "-a", cid],
             capture_output=True, text=True, timeout=timeout + 120,
         )
     except subprocess.TimeoutExpired as exc:
+        elapsed = time.monotonic() - t0
         raise RuntimeError(
-            f"container timed out after {timeout}s"
+            f"container timed out after {elapsed:.0f}s (limit {timeout}s)"
         ) from exc
+    elapsed = time.monotonic() - t0
     if started.returncode != 0:
         stderr = started.stderr.strip()
         stdout_tail = (started.stdout or "").strip()[-4000:]
-        combined = f"container exited {started.returncode}"
-        if stderr:
-            combined += f"\nstderr: {stderr[-2000:]}"
-        if stdout_tail:
-            combined += f"\nstdout tail: {stdout_tail}"
-        logger.error(combined)
-        raise RuntimeError(combined)
+        _check_for_billing_errors(stderr + "\n" + stdout_tail)
+        logger.debug("container stderr:\n%s", stderr[-3000:])
+        logger.debug("container stdout tail:\n%s", stdout_tail[-3000:])
+        raise RuntimeError(f"container exit={started.returncode} ({elapsed:.0f}s)")
+    logger.debug("container done in %.0fs", elapsed)
 
 
 def _copy_export(cid: str, tmpdir: Path) -> str:
@@ -194,13 +381,13 @@ def _build_export_script(*, model: str, timeout: int) -> str:
     return f"""
 cd /work
 
-# OpenCode requires a git repo for project-scoped storage
+# OpenCode requires a git repo for project-scoped storage.
+# Only init + empty commit -- skip 'git add' on large trees to save time.
 if [ ! -d .git ]; then
   git init -q
   git config user.email "bench@vex-bench.local"
   git config user.name "VEX-Bench"
-  git add -A
-  git commit -q -m "bench snapshot" --allow-empty
+  git commit -q --allow-empty -m "init"
 fi
 
 # Pre-create OpenCode data/cache dirs

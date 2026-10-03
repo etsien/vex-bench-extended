@@ -79,14 +79,17 @@ def _run_one_task(
     run_dir: Path,
     repos_dir: Path,
     timeout: int,
+    model_name: str = "",
 ) -> None:
+    import time as _time
+
     task_id = task["task_id"]
     run_id = f"run_{rep:03d}"
-    tag = f"[{task_id}/{run_id}]"
-
     language = task.get("metadata", {}).get("language")
+    tag = f"{model_name} {task_id}/{run_id} [{language}]"
+
     if not language:
-        logger.warning("%s SKIP: missing language", tag)
+        logger.warning("SKIP %s no-language", tag)
         return
 
     repo_url = task["repo_url"]
@@ -94,7 +97,7 @@ def _run_one_task(
     owner, repo = owner_repo.split("/", 1)
     src_cwd = repos_dir / owner / repo / task["commit_sha"]
     if not src_cwd.exists():
-        logger.warning("%s SKIP: source dir not found: %s", tag, src_cwd)
+        logger.warning("SKIP %s src-missing", tag)
         return
 
     run_dir_per_rep = run_dir / task_id / run_id
@@ -103,14 +106,14 @@ def _run_one_task(
     cached = harness_inst.load_result(run_dir_per_rep)
     if cached is not None:
         error_path.unlink(missing_ok=True)
-        logger.info("%s CACHE: %s", tag, cached.path)
         return
     if harness_inst.has_result(run_dir_per_rep):
-        logger.info("%s RE-RUN: cached result unparseable", tag)
+        logger.debug("re-run %s (unparseable cached result)", tag)
 
     run_dir_per_rep.mkdir(parents=True, exist_ok=True)
     prompt = prompt_text.replace("{cve_id}", task["cve_id"])
-    logger.info("%s RUN: src=%s lang=%s", tag, src_cwd, language)
+    logger.info("START %s", tag)
+    t0 = _time.monotonic()
 
     ctx = RunContext(
         cwd=src_cwd,
@@ -121,14 +124,17 @@ def _run_one_task(
     try:
         result = harness_inst.run(prompt, ctx)
     except RuntimeError as exc:
+        elapsed = _time.monotonic() - t0
         error_path.write_text(f"{exc}\n", encoding="utf-8")
-        logger.warning("%s ERROR: %s", tag, exc)
+        logger.warning("FAIL  %s %.0fs %s", tag, elapsed, str(exc)[:120])
         return
 
+    elapsed = _time.monotonic() - t0
     error_path.unlink(missing_ok=True)
     result_path = run_dir_per_rep / harness_inst.result_filename()
     result_path.write_text(result.raw_output, encoding="utf-8")
     harness_inst.save_report(run_dir_per_rep)
+    logger.info("OK    %s %.0fs", tag, elapsed)
 
 
 def run_combination(
@@ -156,7 +162,7 @@ def run_combination(
         tasks = [t for t in tasks if t["task_id"] in config.tasks_filter]
 
     logger.info(
-        "=== %s / %s === tasks=%d repeats=%d prompt=%s",
+        "=== %s/%s tasks=%d repeats=%d prompt=%s ===",
         spec.name, harness.value, len(tasks), config.repeats, prompt_key,
     )
 
@@ -171,17 +177,20 @@ def run_combination(
                 run_dir=run_dir,
                 repos_dir=config.repos_dir,
                 timeout=config.timeout,
+                model_name=spec.name,
             ): (t["task_id"], r)
             for t, r in jobs
         }
-        for i, fut in enumerate(as_completed(futs), 1):
+        done = 0
+        for fut in as_completed(futs):
             tid, rep = futs[fut]
+            done += 1
             try:
                 fut.result()
             except Exception:
-                logger.exception("[%s/run_%03d] unexpected failure", tid, rep)
-            if i % 10 == 0:
-                logger.info("progress %d/%d", i, len(jobs))
+                logger.exception("CRASH %s %s/run_%03d", spec.name, tid, rep)
+            if done % 25 == 0 or done == len(jobs):
+                logger.info("progress %s %d/%d", spec.name, done, len(jobs))
 
     return {
         "model": spec.name,

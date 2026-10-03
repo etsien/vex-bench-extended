@@ -92,14 +92,17 @@ def run_in_container(
     artifact_paths: Sequence[tuple[str, str]] = (),
     network: str | None = None,
 ) -> str:
-    """Run a one-shot agent command in a disposable container; return stdout."""
+    """Run a one-shot agent command in a disposable container; return stdout.
+
+    Files specified in *mounts* are injected via ``docker cp`` after
+    container creation rather than ``-v`` bind mounts.  This avoids
+    permission errors under podman's rootless UID remapping.
+    """
     create_cmd = ["docker", "create", "--workdir", workdir]
     if network is not None:
         create_cmd += ["--network", network]
     if env_file is not None:
         create_cmd += ["--env-file", str(env_file)]
-    for host_path, container_path in mounts:
-        create_cmd += ["-v", f"{host_path}:{container_path}:ro"]
     create_cmd += ["--entrypoint", entrypoint, image, *args]
 
     try:
@@ -111,17 +114,9 @@ def run_in_container(
     cid = created.stdout.strip()
 
     try:
-        try:
-            subprocess.run(
-                ["docker", "cp", f"{src.resolve()}/.", f"{cid}:{workdir}"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(
-                f"docker cp failed: {exc.stderr.strip() or '(no stderr)'}"
-            ) from exc
+        _docker_cp(f"{src.resolve()}/.", f"{cid}:{workdir}", "docker cp source failed")
+        for host_path, container_path in mounts:
+            _docker_cp(str(host_path), f"{cid}:{container_path}", f"docker cp {host_path.name} failed")
 
         try:
             started = subprocess.run(
@@ -176,6 +171,13 @@ def _captured_io(stdout: str | bytes | None, stderr: str | bytes | None) -> str:
         if text:
             parts.append(f"\n{name} tail:\n{text[-4000:]}")
     return "".join(parts)
+
+
+def _docker_cp(src: str, dst: str, message: str) -> None:
+    result = subprocess.run(["docker", "cp", src, dst], capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "(no output)"
+        raise RuntimeError(f"{message}: {detail}")
 
 
 def _decode(value: str | bytes | None) -> str:

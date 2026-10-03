@@ -12,6 +12,7 @@ benchmark/repos/
 
 # Experiment outputs
 results/
+logs/
 
 # Real credential files (only .example templates are tracked)
 env/claude/claude.env
