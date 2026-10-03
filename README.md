@@ -105,20 +105,17 @@ Host                                  Docker container (--network host)
 
 ### Running OpenCode models
 
-```bash
-# Terminal 1: start the proxy (reads OPENROUTER_API_KEY from env)
-export OPENROUTER_API_KEY=sk-or-...
-python scripts/openrouter_proxy.py
-
-# Terminal 2: run the benchmark
-uv run vex-ext matrix --harnesses opencode --repeats 3 --timeout 600
-```
-
-Or use the test script for a quick end-to-end check:
+The proxy starts automatically when the harness runs. It reads `OPENROUTER_API_KEY` from `env/opencode/opencode.env` (or from your shell environment).
 
 ```bash
-export OPENROUTER_API_KEY=sk-or-...
+# Verify the proxy and OpenRouter connection
+bash scripts/check-proxy.sh
+
+# Single-task smoke test
 bash scripts/test-opencode.sh
+
+# Full batch
+uv run vex-ext matrix --harnesses opencode --repeats 3 --timeout 600
 ```
 
 ### Troubleshooting
