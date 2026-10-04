@@ -92,6 +92,8 @@ class CursorHarness(BaseHarness):
         )
 
     def run(self, prompt: str, ctx: RunContext) -> AgentResult:
+        import time as _time
+
         try:
             from cursor_sdk import Agent, AgentOptions, LocalAgentOptions, CursorAgentError
         except ImportError:
@@ -109,6 +111,8 @@ class CursorHarness(BaseHarness):
             if cursor_dir.exists():
                 shutil.rmtree(cursor_dir)
 
+            logger.debug("run model=%s src=%s", self.model, ctx.cwd.name)
+            t0 = _time.monotonic()
             try:
                 result = Agent.prompt(
                     prompt,
@@ -119,11 +123,13 @@ class CursorHarness(BaseHarness):
                     ),
                 )
             except CursorAgentError as exc:
+                elapsed = _time.monotonic() - t0
                 raise RuntimeError(
-                    f"Cursor agent failed: {exc.message} "
+                    f"cursor agent error ({elapsed:.0f}s): {exc.message} "
                     f"(retryable={exc.is_retryable})"
                 ) from exc
 
+            elapsed = _time.monotonic() - t0
             result_obj = {
                 "type": "cursor_local_isolated",
                 "model": self.model,
@@ -132,6 +138,10 @@ class CursorHarness(BaseHarness):
                 "status": getattr(result, "status", None),
                 "output": getattr(result, "result", "") or "",
             }
+            output = result_obj.get("output", "")
+            if not output or not output.strip():
+                raise RuntimeError(f"empty cursor response ({elapsed:.0f}s)")
+            logger.debug("done model=%s %.0fs output=%dB", self.model, elapsed, len(output))
             return AgentResult(raw_output=json.dumps(result_obj, default=str))
 
     def result_filename(self) -> str:

@@ -7,14 +7,18 @@ CLI tool. Each harness implementation wraps a specific execution backend
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -112,11 +116,14 @@ def run_in_container(
             f"docker create failed: {exc.stderr.strip() or '(no stderr)'}"
         ) from exc
     cid = created.stdout.strip()
+    logger.debug("created %s image=%s", cid[:12], image)
 
+    t0 = time.monotonic()
     try:
         _docker_cp(f"{src.resolve()}/.", f"{cid}:{workdir}", "docker cp source failed")
         for host_path, container_path in mounts:
             _docker_cp(str(host_path), f"{cid}:{container_path}", f"docker cp {host_path.name} failed")
+        logger.debug("copied inputs -> %s", cid[:12])
 
         try:
             started = subprocess.run(
@@ -126,17 +133,21 @@ def run_in_container(
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired as exc:
+            elapsed = time.monotonic() - t0
             raise RuntimeError(
-                f"container timed out after {timeout}s"
+                f"container timed out after {elapsed:.0f}s (limit {timeout}s)"
                 f"{_captured_io(exc.stdout, exc.stderr)}"
             ) from exc
 
+        elapsed = time.monotonic() - t0
         if started.returncode != 0:
+            stderr_tail = started.stderr.strip()[-2000:] if started.stderr else ""
+            logger.debug("container stderr:\n%s", stderr_tail)
             raise RuntimeError(
-                f"container exited {started.returncode}: "
-                f"{started.stderr.strip() or '(no stderr)'}"
+                f"container exit={started.returncode} ({elapsed:.0f}s)"
                 f"{_captured_io(started.stdout, started.stderr)}"
             )
+        logger.debug("container done in %.0fs", elapsed)
         return started.stdout
     finally:
         if artifacts_dir is not None:

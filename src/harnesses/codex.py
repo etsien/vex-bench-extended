@@ -28,6 +28,8 @@ class CodexHarness(BaseHarness):
         self.model = model
 
     def run(self, prompt: str, ctx: RunContext) -> AgentResult:
+        import tempfile as _tempfile
+
         env_file = HOST_ENV_FILE.resolve()
         if not env_file.exists():
             raise RuntimeError(f"Env file not found: {env_file}")
@@ -36,22 +38,27 @@ class CodexHarness(BaseHarness):
             raise RuntimeError(f"Config file not found: {config_file}")
 
         image = f"vex-bench-{ctx.language}-codex:latest"
-        stdout = run_in_container(
-            image,
-            [
-                "exec",
-                "--sandbox", "danger-full-access",
-                "--json",
-                "--skip-git-repo-check",
-                "--model", self.model,
-                prompt,
-            ],
-            entrypoint="codex",
-            src=ctx.cwd,
-            timeout=ctx.timeout,
-            env_file=env_file,
-            mounts=[(config_file, CONTAINER_CONFIG)],
+        script = (
+            f'codex exec --sandbox danger-full-access --json '
+            f'--skip-git-repo-check --model {self.model} '
+            f'"$(cat /tmp/prompt.txt)"'
         )
+
+        with _tempfile.TemporaryDirectory(prefix="vex-codex-") as tmp:
+            prompt_path = Path(tmp) / "prompt.txt"
+            prompt_path.write_text(prompt, encoding="utf-8")
+
+            stdout = run_in_container(
+                image, ["-lc", script],
+                entrypoint="sh",
+                src=ctx.cwd,
+                timeout=ctx.timeout,
+                env_file=env_file,
+                mounts=[
+                    (config_file, CONTAINER_CONFIG),
+                    (prompt_path, "/tmp/prompt.txt"),
+                ],
+            )
         return AgentResult(raw_output=stdout)
 
     def result_filename(self) -> str:
