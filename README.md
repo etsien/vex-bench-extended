@@ -67,22 +67,25 @@ cp env/vertex_ai/vertex.env.example env/vertex_ai/vertex.env
 ### 5. Run
 
 ```bash
-# List all available models, harnesses, and matrix combinations
+# List all models, harnesses, and matrix combinations
 uv run vex-ext list
 
-# Run a single model on one task (quick sanity check)
+# Single model, single task (quick sanity check)
 uv run vex-ext run \
-  --model deepseek-v4-flash \
-  --harness opencode \
-  --repeats 1 \
-  --tasks fastapi-fastapi-febf6b6-CVE-2024-47874
+  --model deepseek-v4-flash --harness opencode \
+  --repeats 1 --tasks fastapi-fastapi-febf6b6-CVE-2024-47874
 
-# Run all OpenCode models, 3 repeats, full benchmark
-uv run vex-ext matrix --harnesses opencode --repeats 3
+# Run one harness group with parallelism
+uv run vex-ext matrix --harnesses opencode --repeats 3 --timeout 600 --parallel 2
+uv run vex-ext matrix --harnesses cursor --repeats 3 --timeout 600 --parallel 5
+uv run vex-ext matrix --harnesses claude_code --repeats 3 --timeout 600 --parallel 3
+uv run vex-ext matrix --harnesses codex --repeats 3 --timeout 600 --parallel 3
 
-# Run everything
-uv run vex-ext matrix --repeats 3
+# Run everything (sequential across harnesses)
+uv run vex-ext matrix --repeats 3 --timeout 600 --parallel 2
 ```
+
+Completed runs are cached -- you can interrupt and restart without losing progress. The `--parallel` flag controls concurrent tasks within each harness group. Keep it at 2 for OpenCode (proxy throughput) and go higher for Cursor (no containers).
 
 ## OpenCode harness
 
