@@ -43,8 +43,8 @@ PROVIDER_ROUTING: dict[str, dict] = {
         "allow_fallbacks": False,
     },
     "deepseek/deepseek-v4-flash": {
-        "only": ["streamlake/fp8"],
-        "allow_fallbacks": False,
+        "order": ["streamlake/fp8", "deepinfra"],
+        "allow_fallbacks": True,
     },
     "moonshotai/kimi-k2.6": {
         "only": ["streamlake/fp8"],
@@ -161,7 +161,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
             with _lock:
                 _request_count += 1
                 cnt = _request_count
-            pin_tag = f" pin={body['provider']['only'][0]}" if pinned else ""
+            pin_tag = ""
+            if pinned:
+                providers = body["provider"].get("only") or body["provider"].get("order") or []
+                pin_tag = f" pin={providers[0]}" if providers else ""
             log.info(
                 "#%d POST %s model=%s status=%d bytes=%d %.1fs%s",
                 cnt, self.path, model or "?", resp.status, len(resp_bytes), elapsed, pin_tag,
@@ -235,7 +238,8 @@ def main():
     log.info("listening on %s:%d", args.bind, args.port)
     log.info("provider pinning for %d models", len(PROVIDER_ROUTING))
     for model, routing in PROVIDER_ROUTING.items():
-        log.info("  %s -> %s", model, routing["only"])
+        providers = routing.get("only") or routing.get("order") or []
+        log.info("  %s -> %s", model, providers)
     log.info("key: %s...%s (%d chars)", ProxyHandler.api_key[:8], ProxyHandler.api_key[-4:], len(ProxyHandler.api_key))
     try:
         server.serve_forever()
