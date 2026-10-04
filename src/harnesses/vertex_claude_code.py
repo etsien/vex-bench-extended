@@ -32,6 +32,8 @@ from evaluate.result_parser import parse_category
 logger = logging.getLogger(__name__)
 
 HOST_ENV_FILE = Path("env/vertex_ai/vertex.env")
+GCP_ADC_PATH = Path.home() / ".config/gcloud/application_default_credentials.json"
+CONTAINER_ADC_PATH = "/tmp/gcp-adc.json"
 
 VERTEX_MODELS = {
     "claude-opus-4-6",
@@ -59,6 +61,8 @@ class VertexClaudeCodeHarness(BaseHarness):
         self.model = model
 
     def run(self, prompt: str, ctx: RunContext) -> AgentResult:
+        import tempfile as _tempfile
+
         env_file = HOST_ENV_FILE.resolve()
         if not env_file.exists():
             raise RuntimeError(
@@ -67,26 +71,33 @@ class VertexClaudeCodeHarness(BaseHarness):
             )
 
         image = f"vex-bench-{ctx.language}-claude:latest"
-        args = [
-            "-p",
-            "--output-format", "stream-json",
-            "--verbose",
-            "--model", self.model,
-            "--dangerously-skip-permissions",
-        ]
         effort = EFFORT_BY_MODEL.get(self.model)
-        if effort is not None:
-            args += ["--effort", effort]
-        args.append(prompt)
+        effort_flag = f"--effort {effort} " if effort else ""
 
-        stdout = run_in_container(
-            image, args,
-            entrypoint="claude",
-            src=ctx.cwd,
-            timeout=ctx.timeout,
-            env_file=env_file,
-            network="host",
+        script = (
+            f'claude -p --output-format stream-json --verbose '
+            f'--model {self.model} --dangerously-skip-permissions '
+            f'{effort_flag}"$(cat /tmp/prompt.txt)"'
         )
+
+        with _tempfile.TemporaryDirectory(prefix="vex-vertex-") as tmp:
+            prompt_path = Path(tmp) / "prompt.txt"
+            prompt_path.write_text(prompt, encoding="utf-8")
+
+            mounts = [(prompt_path, "/tmp/prompt.txt")]
+            if GCP_ADC_PATH.exists():
+                mounts.append((GCP_ADC_PATH, CONTAINER_ADC_PATH))
+
+            stdout = run_in_container(
+                image, ["-lc", script],
+                entrypoint="sh",
+                src=ctx.cwd,
+                timeout=ctx.timeout,
+                env_file=env_file,
+                network="host",
+                workdir="/home/bench/work",
+                mounts=mounts,
+            )
         return AgentResult(raw_output=stdout)
 
     def result_filename(self) -> str:
