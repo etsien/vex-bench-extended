@@ -65,6 +65,7 @@ MODEL2NAME = {
 
 _proxy_proc: subprocess.Popen | None = None
 _proxy_log: Path | None = None
+_proxy_lock = __import__("threading").Lock()
 
 
 def _port_open(port: int) -> bool:
@@ -92,73 +93,74 @@ def _ensure_proxy() -> None:
     """Start the OpenRouter proxy if it isn't already listening."""
     global _proxy_proc, _proxy_log
 
-    if _proxy_proc is not None:
-        rc = _proxy_proc.poll()
-        if rc is not None:
-            logger.error("proxy died pid=%d exit=%d log=%s", _proxy_proc.pid, rc, _proxy_log)
-            if _proxy_log and _proxy_log.exists():
-                logger.debug("proxy log tail:\n%s", _proxy_log.read_text()[-2000:])
-            _proxy_proc = None
+    with _proxy_lock:
+        if _proxy_proc is not None:
+            rc = _proxy_proc.poll()
+            if rc is not None:
+                logger.error("proxy died pid=%d exit=%d log=%s", _proxy_proc.pid, rc, _proxy_log)
+                if _proxy_log and _proxy_log.exists():
+                    logger.debug("proxy log tail:\n%s", _proxy_log.read_text()[-2000:])
+                _proxy_proc = None
 
-    if _port_open(PROXY_PORT):
-        return
-
-    _stop_proxy()
-
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        env_vars = _load_env_file(HOST_ENV_FILE)
-        key = env_vars.get("OPENROUTER_API_KEY", "")
-        if key and key != "proxy" and not key.startswith("sk-or-..."):
-            os.environ["OPENROUTER_API_KEY"] = key
-        else:
-            raise RuntimeError(
-                "OPENROUTER_API_KEY not found in env or env/opencode/opencode.env"
-            )
-
-    script = PROXY_SCRIPT.resolve()
-    if not script.exists():
-        raise RuntimeError(f"proxy script missing: {script}")
-
-    LOG_DIR.mkdir(exist_ok=True)
-    _proxy_log = LOG_DIR / f"proxy-{int(time.time())}.log"
-    log_fh = open(_proxy_log, "w")
-
-    logger.info("proxy starting on :%d (log: %s)", PROXY_PORT, _proxy_log)
-    _proxy_proc = subprocess.Popen(
-        [sys.executable, str(script), "--port", str(PROXY_PORT)],
-        stdout=log_fh,
-        stderr=log_fh,
-    )
-    atexit.register(_stop_proxy)
-
-    for _ in range(30):
-        if _proxy_proc.poll() is not None:
-            detail = _proxy_log.read_text()[-1000:] if _proxy_log.exists() else ""
-            raise RuntimeError(f"proxy exited immediately (exit {_proxy_proc.returncode}):\n{detail}")
         if _port_open(PROXY_PORT):
-            logger.info("proxy ready pid=%d", _proxy_proc.pid)
             return
-        time.sleep(0.2)
-    raise RuntimeError(f"proxy failed to start in 6s, see {_proxy_log}")
+
+        _stop_proxy_locked()
+
+        if not os.environ.get("OPENROUTER_API_KEY"):
+            env_vars = _load_env_file(HOST_ENV_FILE)
+            key = env_vars.get("OPENROUTER_API_KEY", "")
+            if key and key != "proxy" and not key.startswith("sk-or-..."):
+                os.environ["OPENROUTER_API_KEY"] = key
+            else:
+                raise RuntimeError(
+                    "OPENROUTER_API_KEY not found in env or env/opencode/opencode.env"
+                )
+
+        script = PROXY_SCRIPT.resolve()
+        if not script.exists():
+            raise RuntimeError(f"proxy script missing: {script}")
+
+        LOG_DIR.mkdir(exist_ok=True)
+        _proxy_log = LOG_DIR / f"proxy-{int(time.time())}.log"
+        log_fh = open(_proxy_log, "w")
+
+        logger.info("proxy starting on :%d (log: %s)", PROXY_PORT, _proxy_log)
+        _proxy_proc = subprocess.Popen(
+            [sys.executable, str(script), "--port", str(PROXY_PORT)],
+            stdout=log_fh,
+            stderr=log_fh,
+        )
+        atexit.register(_stop_proxy)
+
+        for _ in range(30):
+            if _proxy_proc.poll() is not None:
+                detail = _proxy_log.read_text()[-1000:] if _proxy_log.exists() else ""
+                raise RuntimeError(f"proxy exited immediately (exit {_proxy_proc.returncode}):\n{detail}")
+            if _port_open(PROXY_PORT):
+                logger.info("proxy ready pid=%d", _proxy_proc.pid)
+                return
+            time.sleep(0.2)
+        raise RuntimeError(f"proxy failed to start in 6s, see {_proxy_log}")
 
 
 def _check_proxy_alive() -> None:
     """Verify the proxy is still responsive. Called before each container run."""
-    if _proxy_proc is not None:
-        rc = _proxy_proc.poll()
-        if rc is not None:
-            tail = ""
-            if _proxy_log and _proxy_log.exists():
-                tail = _proxy_log.read_text()[-500:]
-            logger.error("proxy dead pid=%d exit=%d", _proxy_proc.pid, rc)
-            logger.debug("proxy log tail:\n%s", tail)
-            raise RuntimeError(f"proxy died (exit {rc}), log: {_proxy_log}")
+    with _proxy_lock:
+        if _proxy_proc is not None:
+            rc = _proxy_proc.poll()
+            if rc is not None:
+                logger.error("proxy dead pid=%d exit=%d", _proxy_proc.pid, rc)
+                logger.debug("proxy log tail:\n%s",
+                             _proxy_log.read_text()[-500:] if _proxy_log and _proxy_log.exists() else "")
+                raise RuntimeError(f"proxy died (exit {rc}), log: {_proxy_log}")
 
     if not _port_open(PROXY_PORT):
         raise RuntimeError(f"proxy port {PROXY_PORT} not reachable")
 
 
-def _stop_proxy() -> None:
+def _stop_proxy_locked() -> None:
+    """Must be called while holding _proxy_lock."""
     global _proxy_proc
     if _proxy_proc is not None:
         pid = _proxy_proc.pid
@@ -170,6 +172,11 @@ def _stop_proxy() -> None:
             _proxy_proc.wait(timeout=2)
         logger.debug("proxy stopped pid=%d", pid)
         _proxy_proc = None
+
+
+def _stop_proxy() -> None:
+    with _proxy_lock:
+        _stop_proxy_locked()
 
 
 class OpenCodeHarness(BaseHarness):
@@ -268,21 +275,24 @@ def _validate_output(output: str, elapsed: float) -> None:
     logger.debug("validated: in=%d out=%d %.0fs", tok_in, tok_out, elapsed)
 
 
-_BILLING_PATTERNS = [
-    "insufficient", "quota", "exceeded", "billing", "payment",
-    "rate limit", "429", "402", "credits", "funds",
-]
+_BILLING_RE = __import__("re").compile(
+    r"(?i)(insufficient.{0,20}(credits|funds|balance)"
+    r"|quota.{0,10}exceeded"
+    r"|billing.{0,10}(error|limit)"
+    r"|payment.{0,10}required"
+    r"|statusCode.{0,5}(402|429)"
+    r"|\"code\"\s*:\s*(402|429))"
+)
 
 
 def _check_for_billing_errors(text: str) -> None:
     """Surface billing/quota errors with ERROR level."""
-    lower = text.lower()
-    for pattern in _BILLING_PATTERNS:
-        if pattern in lower:
-            for line in text.splitlines():
-                if pattern in line.lower():
-                    logger.error("BILLING: %s", line.strip()[:200])
-            return
+    for m in _BILLING_RE.finditer(text):
+        start = max(0, m.start() - 40)
+        end = min(len(text), m.end() + 80)
+        context = text[start:end].replace("\n", " ").strip()
+        logger.error("BILLING: ...%s...", context)
+        return
 
 
 def _run_opencode_and_export(
