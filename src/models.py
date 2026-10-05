@@ -12,7 +12,6 @@ from enum import Enum
 
 
 class Harness(str, Enum):
-    CLAUDE_CODE = "claude_code"
     CODEX = "codex"
     OPENCODE = "opencode"
     CURSOR = "cursor"
@@ -40,28 +39,26 @@ class ModelSpec:
 # ---------------------------------------------------------------------------
 CURSOR_MODELS: list[ModelSpec] = [
     ModelSpec(
-        name="grok-3",
-        provider_id="grok-3",
-        harnesses=(Harness.CURSOR,),
-        prompt_variant=PromptVariant.CONCISE,
-    ),
-    ModelSpec(
         name="claude-opus-4-6",
         provider_id="claude-opus-4-6",
-        harnesses=(Harness.CURSOR, Harness.CLAUDE_CODE),
+        harnesses=(Harness.CURSOR,),
         effort="high",
     ),
     ModelSpec(
         name="claude-sonnet-4-6",
         provider_id="claude-sonnet-4-6",
-        harnesses=(Harness.CURSOR, Harness.CLAUDE_CODE),
+        harnesses=(Harness.CURSOR,),
         effort="high",
     ),
     ModelSpec(
-        name="gemini-2.5-pro",
-        provider_id="gemini-2.5-pro",
+        name="grok-4.6",
+        provider_id="grok-4.6",
         harnesses=(Harness.CURSOR,),
-        prompt_variant=PromptVariant.DEFAULT,
+    ),
+    ModelSpec(
+        name="composer-2.5",
+        provider_id="composer-2.5",
+        harnesses=(Harness.CURSOR,),
     ),
 ]
 
@@ -76,6 +73,24 @@ VERTEX_MODELS: list[ModelSpec] = [
     ModelSpec(
         name="vertex-claude-opus-4-6",
         provider_id="claude-opus-4-6",
+        harnesses=(Harness.VERTEX_CLAUDE_CODE,),
+        effort="high",
+    ),
+    ModelSpec(
+        name="vertex-claude-sonnet-4-6",
+        provider_id="claude-sonnet-4-6",
+        harnesses=(Harness.VERTEX_CLAUDE_CODE,),
+        effort="high",
+    ),
+    ModelSpec(
+        name="vertex-claude-opus-5",
+        provider_id="claude-opus-5",
+        harnesses=(Harness.VERTEX_CLAUDE_CODE,),
+        effort="high",
+    ),
+    ModelSpec(
+        name="vertex-claude-sonnet-5",
+        provider_id="claude-sonnet-5",
         harnesses=(Harness.VERTEX_CLAUDE_CODE,),
         effort="high",
     ),
