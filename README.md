@@ -6,12 +6,23 @@ Extended benchmarking harness for [VEX-Bench](https://github.com/steven1518/vex-
 
 The original VEX-Bench evaluates 9 models across 3 harnesses. This project adds Cursor SDK and Vertex AI harnesses and extends the OpenCode harness to support OpenRouter-hosted models with fp8 provider pinning.
 
-| Harness | Models | Provider |
-|---|---|---|
-| **Cursor** (SDK) | Grok 3, Claude Opus 4.6, Claude Sonnet 4.6, Gemini 2.5 Pro | Cursor-native |
-| **Vertex AI Claude Code** | Claude Opus 4.6 | Corporate Vertex AI |
-| **Codex** | GPT-5.5, GPT-5.4 mini | OpenAI API |
-| **OpenCode** | DeepSeek-V4-Pro, DeepSeek-V4-Flash, Kimi K2.6, MiniMax M2.7, GLM 5.1 | OpenRouter (fp8 pinned) |
+| Harness | Model | Effort | Provider |
+|---|---|---|---|
+| **Cursor** (SDK) | Claude Opus 4.6 | high | Cursor-native |
+| | Claude Sonnet 4.6 | high | Cursor-native |
+| | Grok 4.6 | -- | Cursor-native |
+| | Composer 2.5 | -- | Cursor-native |
+| **Vertex AI Claude Code** | Claude Opus 4.6 | high | Corporate Vertex AI |
+| | Claude Sonnet 4.6 | high | Corporate Vertex AI |
+| | Claude Opus 5 | high | Corporate Vertex AI |
+| | Claude Sonnet 5 | high | Corporate Vertex AI |
+| **Codex** | GPT-5.5 | xhigh | OpenAI API |
+| | GPT-5.4 mini | xhigh | OpenAI API |
+| **OpenCode** | DeepSeek-V4-Pro | -- | OpenRouter (fp8 pinned) |
+| | DeepSeek-V4-Flash | -- | OpenRouter (fp8 pinned) |
+| | Kimi K2.6 | -- | OpenRouter (fp8 pinned) |
+| | MiniMax M2.7 | -- | OpenRouter (fp8 pinned) |
+| | GLM 5.1 | -- | OpenRouter (fp8 pinned) |
 
 ## Quick start
 
@@ -133,7 +144,7 @@ Host                                  Docker container (--network host)
 
 ### Running OpenCode models
 
-The proxy starts automatically when the harness runs. It reads `OPENROUTER_API_KEY` from `env/opencode/opencode.env` (or from your shell environment).
+The proxy starts automatically when the harness runs (no separate startup needed). It reads `OPENROUTER_API_KEY` from `env/opencode/opencode.env` (or from your shell environment).
 
 ```bash
 # Verify the proxy and OpenRouter connection
@@ -156,7 +167,7 @@ See [docs/opencode-troubleshooting.md](docs/opencode-troubleshooting.md) for kno
 
 | Command | Description |
 |---|---|
-| `vex-ext list` | List all models, harnesses, prompt variants, and matrix combinations |
+| `vex-ext list` | List all models, harnesses, and matrix combinations |
 | `vex-ext run` | Run a single model+harness combination |
 | `vex-ext parse` | Parse raw results into `parsed.jsonl` |
 | `vex-ext metrics` | Compute classification metrics from parsed results |
@@ -172,17 +183,6 @@ See [docs/opencode-troubleshooting.md](docs/opencode-troubleshooting.md) for kno
 | `--timeout` | 600 | Per-task timeout in seconds |
 | `--parallel` | 1 | Concurrent task executions |
 | `--tasks` | all | Filter to specific task IDs |
-| `--prompt` | model default | Prompt variant override (`default`, `concise`, `chain_of_thought`) |
-
-### Prompt variants
-
-Three prompt variants share the identical classification schema but differ in framing:
-
-- **default** -- Original VEX-Bench prompt (XML-tagged sections, detailed role/context)
-- **concise** -- Shorter preamble for models that work better with direct instructions
-- **chain_of_thought** -- Explicit step-by-step analysis scaffold
-
-Each model declares a preferred variant in `src/models.py`. Override per-run with `--prompt`.
 
 ## Output structure
 
@@ -225,7 +225,7 @@ vex-bench-extended/
     cli.py                    CLI entry point (vex-ext)
     models.py                 model registry + matrix definitions
     orchestrator.py           run/parse/metrics pipeline driver
-    prompts/                  prompt variants
+    prompts/                  prompt template
     harnesses/                execution backends per agent
     evaluate/                 result parsing, pricing, metrics
   matrix.yaml                 default matrix configuration
@@ -234,7 +234,7 @@ vex-bench-extended/
 
 ## Adding a new model
 
-1. Add a `ModelSpec` in `src/models.py` with name, provider ID, compatible harnesses, and preferred prompt variant.
+1. Add a `ModelSpec` in `src/models.py` with name, provider ID, and compatible harnesses.
 2. If pricing is known, add an entry in `src/evaluate/pricing.py`.
 3. If the model needs a new harness, implement `BaseHarness` in `src/harnesses/`.
 4. Test: `uv run vex-ext run --model your-model --repeats 1 --tasks <any-task-id>`
@@ -258,7 +258,6 @@ This project uses the same benchmark task format, result parsing, and metrics as
 
 - **Harness abstraction** decouples agent execution from model selection
 - **Model matrix** automates all valid (model, harness) combinations
-- **Prompt variants** adapt instruction style per model family
 - **Vertex AI support** enables corporate-hosted model benchmarking
 - **Cursor SDK support** enables benchmarking Cursor-native models
 - **OpenRouter proxy** enables reproducible fp8-quantized open-weight model benchmarking
