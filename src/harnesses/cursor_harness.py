@@ -105,7 +105,7 @@ class CursorHarness(BaseHarness):
 
         with tempfile.TemporaryDirectory(prefix="vex-cursor-") as tmp:
             work_dir = Path(tmp) / "work"
-            shutil.copytree(ctx.cwd, work_dir)
+            shutil.copytree(ctx.cwd, work_dir, symlinks=True)
 
             cursor_dir = work_dir / ".cursor"
             if cursor_dir.exists():
