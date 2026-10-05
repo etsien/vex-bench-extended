@@ -37,10 +37,16 @@ CONTAINER_ADC_PATH = "/tmp/gcp-adc.json"
 
 VERTEX_MODELS = {
     "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-opus-5",
+    "claude-sonnet-5",
 }
 
 EFFORT_BY_MODEL = {
     "claude-opus-4-6": "high",
+    "claude-sonnet-4-6": "high",
+    "claude-opus-5": "high",
+    "claude-sonnet-5": "high",
 }
 
 
