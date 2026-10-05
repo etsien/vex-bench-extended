@@ -39,10 +39,10 @@ logger = logging.getLogger(__name__)
 HOST_ENV_FILE = Path("env/cursor/cursor.env")
 
 CURSOR_MODELS = {
-    "grok-3",
     "claude-opus-4-6",
     "claude-sonnet-4-6",
-    "gemini-2.5-pro",
+    "grok-4.6",
+    "composer-2.5",
 }
 
 
