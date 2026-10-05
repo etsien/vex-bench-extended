@@ -240,7 +240,7 @@ def main():
     for model, routing in PROVIDER_ROUTING.items():
         providers = routing.get("only") or routing.get("order") or []
         log.info("  %s -> %s", model, providers)
-    log.info("key: %s...%s (%d chars)", ProxyHandler.api_key[:8], ProxyHandler.api_key[-4:], len(ProxyHandler.api_key))
+    log.info("key: %s... (%d chars)", ProxyHandler.api_key[:4], len(ProxyHandler.api_key))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
