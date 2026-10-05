@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 HOST_ENV_FILE = Path("env/codex/codex.env")
 HOST_CONFIG = Path("env/codex/config.toml")
-CONTAINER_CONFIG = "/tmp/.codex/config.toml"
+CONTAINER_CONFIG = "/root/.codex/config.toml"
 
 
 class CodexHarness(BaseHarness):
@@ -39,6 +39,7 @@ class CodexHarness(BaseHarness):
 
         image = f"vex-bench-{ctx.language}-codex:latest"
         script = (
+            'printenv OPENAI_API_KEY | codex auth login --with-api-key > /dev/null 2>&1; '
             f'codex exec --sandbox danger-full-access --json '
             f'--skip-git-repo-check --model {self.model} '
             f'"$(cat /tmp/prompt.txt)"'
@@ -54,6 +55,7 @@ class CodexHarness(BaseHarness):
                 src=ctx.cwd,
                 timeout=ctx.timeout,
                 env_file=env_file,
+                network="host",
                 mounts=[
                     (config_file, CONTAINER_CONFIG),
                     (prompt_path, "/tmp/prompt.txt"),
