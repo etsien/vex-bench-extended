@@ -63,7 +63,33 @@ cp env/cursor/cursor.env.example env/cursor/cursor.env
 cp env/vertex_ai/vertex.env.example env/vertex_ai/vertex.env
 ```
 
-### 5. Run
+### 5. Preflight: test every model before a full batch
+
+Before committing to a long batch job, run a single-task test for every
+model in the target harness. This catches registration errors, broken
+credentials, symlink issues, and Docker image problems up front.
+
+```bash
+# Pick any lightweight task for the dry run
+TASK=fastapi-fastapi-febf6b6-CVE-2024-47874
+
+# Test all models for a given harness (one task, one repeat each)
+for model in $(uv run vex-ext list 2>/dev/null | awk -v h=cursor '
+    /^ / && index($0, "harnesses=[") {
+        split($0, a, "harnesses=\\["); split(a[2], b, "\\]");
+        if (index(b[1], h)) print $1
+    }'); do
+  echo "--- preflight: $model ---"
+  uv run vex-ext run --model "$model" --repeats 1 --tasks "$TASK" --timeout 120
+done
+```
+
+Replace `cursor` with whichever harness you plan to batch (`codex`,
+`opencode`, `vertex_claude_code`). Every model should complete or print a
+clear `FAIL`/`SKIP` -- any `CRASH` or stack trace means the harness config
+needs fixing before you start the real run.
+
+### 6. Run
 
 ```bash
 # List all models, harnesses, and matrix combinations
