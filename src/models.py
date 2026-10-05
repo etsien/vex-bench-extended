@@ -18,18 +18,11 @@ class Harness(str, Enum):
     VERTEX_CLAUDE_CODE = "vertex_claude_code"
 
 
-class PromptVariant(str, Enum):
-    DEFAULT = "default"
-    CONCISE = "concise"
-    COT = "chain_of_thought"
-
-
 @dataclass(frozen=True)
 class ModelSpec:
     name: str
     provider_id: str
     harnesses: tuple[Harness, ...]
-    prompt_variant: PromptVariant = PromptVariant.DEFAULT
     effort: str | None = None
     extra: dict = field(default_factory=dict)
 

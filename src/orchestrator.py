@@ -1,8 +1,7 @@
 """Cross-harness, cross-model benchmark orchestrator.
 
-Resolves the full (model, harness, prompt) matrix from a YAML config
-or CLI flags, then drives the run -> parse -> metrics pipeline for
-each combination. Supports:
+Resolves the full (model, harness) matrix from CLI flags, then drives
+the run -> parse -> metrics pipeline for each combination. Supports:
   - Parallel execution across combinations
   - Resume from cached results
   - Selective re-runs by model/harness/task filter
@@ -21,7 +20,7 @@ from pathlib import Path
 from harnesses import HARNESS_REGISTRY, BaseHarness, RunContext, RunStats
 from evaluate.pricing import cost_usd
 from evaluate.result_parser import normalize_ground_truth, parse_category, to_binary
-from models import Harness, ModelSpec, PromptVariant, resolve_matrix
+from models import Harness, ModelSpec, resolve_matrix
 from prompts import get_prompt
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,6 @@ class RunConfig:
     models: list[str] | None = None
     harnesses: list[str] | None = None
     benchmark: str = "vex_bench"
-    prompt_override: str | None = None
     repeats: int = 1
     timeout: int = 600
     parallel: int = 1
@@ -143,8 +141,7 @@ def run_combination(
     config: RunConfig,
 ) -> dict:
     """Run all tasks for one (model, harness) combination."""
-    prompt_key = config.prompt_override or spec.prompt_variant.value
-    prompt_text = get_prompt(prompt_key)
+    prompt_text = get_prompt()
     p_hash = _prompt_hash(prompt_text)
 
     run_dir = config.output_dir / p_hash / harness.value / spec.name
@@ -162,8 +159,8 @@ def run_combination(
         tasks = [t for t in tasks if t["task_id"] in config.tasks_filter]
 
     logger.info(
-        "=== %s/%s tasks=%d repeats=%d prompt=%s ===",
-        spec.name, harness.value, len(tasks), config.repeats, prompt_key,
+        "=== %s/%s tasks=%d repeats=%d ===",
+        spec.name, harness.value, len(tasks), config.repeats,
     )
 
     jobs = [(task, rep) for task in tasks for rep in range(1, config.repeats + 1)]
@@ -195,7 +192,6 @@ def run_combination(
     return {
         "model": spec.name,
         "harness": harness.value,
-        "prompt": prompt_key,
         "prompt_hash": p_hash,
         "tasks": len(tasks),
         "repeats": config.repeats,
@@ -208,8 +204,7 @@ def parse_combination(
     config: RunConfig,
 ) -> Path:
     """Parse raw results into parsed.jsonl for one combination."""
-    prompt_key = config.prompt_override or spec.prompt_variant.value
-    prompt_text = get_prompt(prompt_key)
+    prompt_text = get_prompt()
     p_hash = _prompt_hash(prompt_text)
 
     run_dir = config.output_dir / p_hash / harness.value / spec.name
@@ -292,7 +287,7 @@ def orchestrate(config: RunConfig) -> list[dict]:
 
     logger.info("resolved %d (model, harness) combinations", len(matrix))
     for spec, harness in matrix:
-        logger.info("  %s x %s (prompt: %s)", spec.name, harness.value, spec.prompt_variant.value)
+        logger.info("  %s x %s", spec.name, harness.value)
 
     summaries: list[dict] = []
     for spec, harness in matrix:

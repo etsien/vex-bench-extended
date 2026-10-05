@@ -1,11 +1,11 @@
 """CLI entry point for vex-bench-extended.
 
-Provides three command groups:
+Provides command groups:
   vex-ext run       -- run individual or matrix experiments
   vex-ext parse     -- parse raw results to parsed.jsonl
   vex-ext metrics   -- compute classification metrics
   vex-ext matrix    -- run the full model x harness matrix
-  vex-ext list      -- list available models, harnesses, prompts
+  vex-ext list      -- list available models, harnesses
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ import logging
 from pathlib import Path
 
 from models import ALL_MODELS, Harness, resolve_matrix
-from prompts import PROMPTS
 
 
 def main() -> None:
@@ -24,7 +23,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # --- list ---
-    list_p = sub.add_parser("list", help="List available models, harnesses, and prompts")
+    list_p = sub.add_parser("list", help="List available models and harnesses")
     list_p.set_defaults(func=_cmd_list)
 
     # --- run ---
@@ -73,11 +72,6 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Harness to use",
     )
     parser.add_argument("--benchmark", default="vex_bench", help="Benchmark name")
-    parser.add_argument(
-        "--prompt", default=None,
-        choices=sorted(PROMPTS),
-        help="Prompt variant override",
-    )
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--parallel", type=int, default=1)
@@ -90,15 +84,11 @@ def _cmd_list(args: argparse.Namespace) -> None:
     print("\n=== Models ===")
     for spec in ALL_MODELS:
         harness_names = ", ".join(h.value for h in spec.harnesses)
-        print(f"  {spec.name:<30} harnesses=[{harness_names}]  prompt={spec.prompt_variant.value}")
+        print(f"  {spec.name:<30} harnesses=[{harness_names}]")
 
     print("\n=== Harnesses ===")
     for h in Harness:
         print(f"  {h.value}")
-
-    print("\n=== Prompts ===")
-    for name in sorted(PROMPTS):
-        print(f"  {name}")
 
     print(f"\n=== Matrix ({len(resolve_matrix())} combinations) ===")
     for spec, h in resolve_matrix():
@@ -121,7 +111,6 @@ def _cmd_run(args: argparse.Namespace) -> None:
 
     config = RunConfig(
         benchmark=args.benchmark,
-        prompt_override=args.prompt,
         repeats=args.repeats,
         timeout=args.timeout,
         parallel=args.parallel,
@@ -149,7 +138,6 @@ def _cmd_parse(args: argparse.Namespace) -> None:
 
     config = RunConfig(
         benchmark=args.benchmark,
-        prompt_override=args.prompt,
         repeats=args.repeats,
         repos_dir=Path(args.repos_dir),
         output_dir=Path(args.output_dir),
@@ -176,8 +164,7 @@ def _cmd_metrics(args: argparse.Namespace) -> None:
     harness_val = args.harness or spec.harnesses[0].value
     harness = Harness(harness_val)
 
-    prompt_key = args.prompt or spec.prompt_variant.value
-    prompt_text = get_prompt(prompt_key)
+    prompt_text = get_prompt()
     p_hash = hashlib.sha256(prompt_text.encode()).hexdigest()[:12]
 
     output_dir = Path(args.output_dir)
@@ -204,7 +191,6 @@ def _cmd_matrix(args: argparse.Namespace) -> None:
         models=args.models,
         harnesses=args.harnesses,
         benchmark=args.benchmark,
-        prompt_override=args.prompt,
         repeats=args.repeats,
         timeout=args.timeout,
         parallel=args.parallel,

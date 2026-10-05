@@ -1,3 +1,3 @@
-from prompts.base import PROMPTS, get_prompt
+from prompts.base import get_prompt
 
-__all__ = ["PROMPTS", "get_prompt"]
+__all__ = ["get_prompt"]

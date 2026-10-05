@@ -1,17 +1,13 @@
-"""Prompt templates for VEX-Bench evaluation.
+"""Prompt template for VEX-Bench evaluation.
 
-The DEFAULT prompt is the original VEX-Bench prompt from the paper.
-Additional variants adapt the framing for model families that respond
-better to different instruction styles while keeping the classification
-schema identical.
+The prompt is the original VEX-Bench prompt from the paper with the
+shared classification schema, decision rules, output format, and example.
 """
 
 from __future__ import annotations
 
-from models import PromptVariant
-
 # ---------------------------------------------------------------------------
-# Shared classification schema (identical across all variants)
+# Shared classification schema
 # ---------------------------------------------------------------------------
 CLASSIFICATION_BLOCK = """
 <CLASSIFICATION_CATEGORIES>
@@ -98,9 +94,9 @@ EXAMPLE_BLOCK = """
 """.strip()
 
 # ---------------------------------------------------------------------------
-# Prompt: DEFAULT (original VEX-Bench)
+# Prompt (original VEX-Bench)
 # ---------------------------------------------------------------------------
-PROMPT_DEFAULT = f"""
+PROMPT = f"""
 <ROLE>
 You are a security analyst. Decide whether the given CVE actually affects current codebase, and classify the result into one of 12 fixed categories.
 </ROLE>
@@ -124,89 +120,6 @@ Treat this as a static analysis task. Do not assume runtime behavior you cannot 
 {EXAMPLE_BLOCK}
 """.strip()
 
-# ---------------------------------------------------------------------------
-# Prompt: CONCISE -- shorter preamble, same schema.
-# Better for models (Grok, some Gemini configs) that perform worse with
-# very long system-level instructions and benefit from directness.
-# ---------------------------------------------------------------------------
-PROMPT_CONCISE = f"""
-You are a security analyst performing static vulnerability exploitability assessment.
 
-Given CVE **{{cve_id}}** and the source tree in the working directory, determine whether this codebase is actually affected. You have access to the filesystem and public CVE/advisory information.
-
-Walk the precedence list below top-to-bottom and pick the FIRST matching category.
-
-{CLASSIFICATION_BLOCK}
-
-{DECISION_RULES_BLOCK}
-
-{OUTPUT_FORMAT_BLOCK}
-
-{EXAMPLE_BLOCK}
-""".strip()
-
-# ---------------------------------------------------------------------------
-# Prompt: CHAIN_OF_THOUGHT -- explicit step-by-step reasoning scaffold.
-# For models with strong CoT capabilities (Claude Opus, GPT-5.5) that
-# benefit from structured decomposition of the analysis.
-# ---------------------------------------------------------------------------
-PROMPT_COT = f"""
-<ROLE>
-You are a security analyst. Decide whether the given CVE actually affects the current codebase. Work through the analysis step by step before committing to a classification.
-</ROLE>
-
-<CONTEXT>
-The working directory is a source tree. There is no running container, no running process, and no deployment context: only files you can read and search, plus any public CVE/advisory information you look up.
-
-Treat this as a static analysis task. Do not assume runtime behavior you cannot back with evidence visible in the source tree.
-</CONTEXT>
-
-<CVE>
-{{cve_id}}
-</CVE>
-
-<ANALYSIS_STEPS>
-Before classifying, work through these steps in order. Use your tools to gather evidence at each step.
-
-Step 1 - Understand the vulnerability: Look up the CVE to identify the affected package, affected versions, vulnerable function(s), and exploit preconditions.
-
-Step 2 - Check dependency presence: Inspect manifests, lockfiles, and vendored code. Is the vulnerable package (at an affected version) in this project's dependency graph?
-
-Step 3 - Trace reachability: If the package is present, search for imports and call sites of the vulnerable function(s) in first-party (non-test) source. Follow the call chain.
-
-Step 4 - Check mitigations: If the code is reachable, look for configuration gates, environment constraints, or protective controls that prevent exploitation.
-
-Step 5 - Classify: Walk the precedence list below and select the FIRST matching category.
-</ANALYSIS_STEPS>
-
-{CLASSIFICATION_BLOCK}
-
-{DECISION_RULES_BLOCK}
-
-{OUTPUT_FORMAT_BLOCK}
-
-{EXAMPLE_BLOCK}
-""".strip()
-
-
-PROMPTS: dict[str, str] = {
-    "default": PROMPT_DEFAULT,
-    "concise": PROMPT_CONCISE,
-    "chain_of_thought": PROMPT_COT,
-}
-
-VARIANT_TO_PROMPT: dict[PromptVariant, str] = {
-    PromptVariant.DEFAULT: "default",
-    PromptVariant.CONCISE: "concise",
-    PromptVariant.COT: "chain_of_thought",
-}
-
-
-def get_prompt(variant: PromptVariant | str) -> str:
-    if isinstance(variant, PromptVariant):
-        key = VARIANT_TO_PROMPT[variant]
-    else:
-        key = variant
-    if key not in PROMPTS:
-        raise ValueError(f"Unknown prompt variant: {key!r}. Available: {sorted(PROMPTS)}")
-    return PROMPTS[key]
+def get_prompt() -> str:
+    return PROMPT
