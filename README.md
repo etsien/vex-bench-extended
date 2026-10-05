@@ -9,8 +9,7 @@ The original VEX-Bench evaluates 9 models across 3 harnesses. This project adds 
 | Harness | Models | Provider |
 |---|---|---|
 | **Cursor** (SDK) | Grok 3, Claude Opus 4.6, Claude Sonnet 4.6, Gemini 2.5 Pro | Cursor-native |
-| **Vertex AI Claude Code** | Claude Opus 4.6, Gemini 2.5 Pro, GPT Luna | Corporate Vertex AI |
-| **Claude Code** | Claude Opus 4.6, Claude Sonnet 4.6 | Anthropic API |
+| **Vertex AI Claude Code** | Claude Opus 4.6 | Corporate Vertex AI |
 | **Codex** | GPT-5.5, GPT-5.4 mini | OpenAI API |
 | **OpenCode** | DeepSeek-V4-Pro, DeepSeek-V4-Flash, Kimi K2.6, MiniMax M2.7, GLM 5.1 | OpenRouter (fp8 pinned) |
 
@@ -78,7 +77,7 @@ uv run vex-ext run \
 # Run one harness group with parallelism
 uv run vex-ext matrix --harnesses opencode --repeats 3 --timeout 600 --parallel 2
 uv run vex-ext matrix --harnesses cursor --repeats 3 --timeout 600 --parallel 5
-uv run vex-ext matrix --harnesses claude_code --repeats 3 --timeout 600 --parallel 3
+uv run vex-ext matrix --harnesses vertex_claude_code --repeats 3 --timeout 600 --parallel 3
 uv run vex-ext matrix --harnesses codex --repeats 3 --timeout 600 --parallel 3
 
 # Run everything (sequential across harnesses)
@@ -221,8 +220,7 @@ Every harness runs benchmark tasks in a clean environment, separated from local 
 | Harness | Isolation |
 |---|---|
 | **Cursor** | Local SDK agent with no `setting_sources`. No user rules, skills, MCP servers, or hooks. Source copied to a clean temp dir with `.cursor/` removed. |
-| **Claude Code** | Disposable Docker container per task. Source injected via `docker cp`, container destroyed after. |
-| **Vertex AI Claude Code** | Same Docker isolation as Claude Code, with Vertex AI credentials mounted. |
+| **Vertex AI Claude Code** | Disposable Docker container per task. Source and GCP credentials injected via `docker cp`, container destroyed after. |
 | **Codex** | Disposable Docker container. |
 | **OpenCode** | Disposable Docker container. Config injected via `docker cp`. |
 
